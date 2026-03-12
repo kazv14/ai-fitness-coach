@@ -2,9 +2,10 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>AI FITNESS COACH</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe-tasks-vision/0.10.9/vision_bundle.mjs" type="module"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&display=swap');
 
@@ -16,438 +17,283 @@
     --muted: #2a2a3a;
     --text: #e8e8f0;
     --dim: #6a6a8a;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-  body {
+  html, body {
+    width: 100%; height: 100%;
     background: var(--bg);
     color: var(--text);
     font-family: 'JetBrains Mono', monospace;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
     overflow: hidden;
   }
 
-  /* Animated grid background */
   body::before {
     content: '';
-    position: fixed;
-    inset: 0;
+    position: fixed; inset: 0;
     background-image:
       linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
       linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
     background-size: 40px 40px;
-    pointer-events: none;
-    z-index: 0;
+    pointer-events: none; z-index: 0;
   }
 
+  /* ── HEADER ── */
   header {
-    position: relative;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 28px;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: calc(var(--safe-top) + 10px) 18px 10px;
+    background: rgba(10,10,15,0.92);
+    backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--muted);
-    background: rgba(10,10,15,0.9);
-    backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: space-between;
   }
 
   .logo {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 2rem;
-    letter-spacing: 4px;
+    font-size: 1.5rem; letter-spacing: 4px;
     color: var(--accent);
-    text-shadow: 0 0 20px rgba(0,255,136,0.5);
+    text-shadow: 0 0 16px rgba(0,255,136,0.5);
   }
-
   .logo span { color: var(--text); }
 
   .status-badge {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.7rem;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--dim);
+    display: flex; align-items: center; gap: 7px;
+    font-size: 0.6rem; letter-spacing: 2px; color: var(--dim);
   }
-
   .status-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--warn);
-    transition: background 0.3s;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--warn); transition: background 0.3s;
   }
-  .status-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+  .status-dot.active {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: blink 2s infinite;
   }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
+  /* ── MAIN LAYOUT (vertical scroll) ── */
   main {
-    position: relative;
+    position: fixed; inset: 0;
+    padding-top: calc(var(--safe-top) + 54px);
+    padding-bottom: calc(var(--safe-bottom) + 8px);
+    overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     z-index: 1;
-    flex: 1;
-    display: grid;
-    grid-template-columns: 1fr 300px;
-    gap: 16px;
-    padding: 16px 28px 20px;
-    max-height: calc(100vh - 70px);
   }
 
-  .camera-section {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
+  .inner { padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
 
-  .canvas-wrapper {
+  /* ── CAMERA BOX ── */
+  .camera-wrap {
     position: relative;
+    width: 100%;
+    aspect-ratio: 9/13;
     background: var(--panel);
     border: 1px solid var(--muted);
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
-    flex: 1;
-    min-height: 0;
   }
 
   #videoEl {
-    position: absolute;
+    position: absolute; inset: 0;
     width: 100%; height: 100%;
     object-fit: cover;
-    opacity: 0;
-    pointer-events: none;
+    opacity: 0; pointer-events: none;
   }
 
   #poseCanvas {
+    position: absolute; inset: 0;
     width: 100%; height: 100%;
     object-fit: cover;
-    display: block;
     transform: scaleX(-1);
   }
 
-  .start-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: rgba(10,10,15,0.85);
-    backdrop-filter: blur(4px);
-    gap: 24px;
-    transition: opacity 0.5s;
-  }
-
-  .start-overlay.hidden { opacity: 0; pointer-events: none; }
-
-  .start-icon {
-    font-size: 4rem;
-    animation: float 3s ease-in-out infinite;
-  }
-
-  @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-  }
-
-  .start-title {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 1.8rem;
-    letter-spacing: 4px;
-    color: var(--text);
-  }
-
-  .start-desc {
-    font-size: 0.75rem;
-    color: var(--dim);
-    letter-spacing: 1px;
-    text-align: center;
-    line-height: 1.8;
-  }
-
-  .btn-start {
-    background: var(--accent);
-    color: var(--bg);
-    border: none;
-    padding: 14px 40px;
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 1.2rem;
-    letter-spacing: 3px;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-    box-shadow: 0 0 20px rgba(0,255,136,0.3);
-  }
-
-  .btn-start:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 30px rgba(0,255,136,0.5);
-  }
-
-  /* Angle indicators overlay */
+  /* Angle chips */
   .angle-display {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    display: flex;
-    gap: 8px;
+    position: absolute; top: 10px; left: 10px;
+    display: flex; gap: 6px; z-index: 10;
   }
-
   .angle-chip {
     background: rgba(10,10,15,0.8);
     border: 1px solid var(--muted);
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-size: 0.7rem;
-    letter-spacing: 1px;
+    border-radius: 6px; padding: 5px 10px;
+    font-size: 0.65rem; letter-spacing: 1px;
     backdrop-filter: blur(8px);
     transition: border-color 0.3s, color 0.3s;
   }
-
   .angle-chip.good { border-color: var(--accent); color: var(--accent); }
   .angle-chip.warn { border-color: var(--warn); color: var(--warn); }
 
   /* Feedback banner */
   .feedback-banner {
-    position: absolute;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%) translateY(80px);
+    position: absolute; bottom: 14px; left: 50%;
+    transform: translateX(-50%) translateY(70px);
     background: rgba(255,60,90,0.15);
     border: 1px solid var(--warn);
-    border-radius: 8px;
-    padding: 10px 28px;
+    border-radius: 8px; padding: 9px 24px;
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 1.4rem;
-    letter-spacing: 3px;
-    color: var(--warn);
-    white-space: nowrap;
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    backdrop-filter: blur(8px);
+    font-size: 1.3rem; letter-spacing: 3px;
+    color: var(--warn); white-space: nowrap;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    backdrop-filter: blur(8px); z-index: 10;
   }
-
   .feedback-banner.show { transform: translateX(-50%) translateY(0); }
-  .feedback-banner.good-fb {
-    background: rgba(0,255,136,0.1);
-    border-color: var(--accent);
-    color: var(--accent);
+  .feedback-banner.good-fb { background: rgba(0,255,136,0.1); border-color: var(--accent); color: var(--accent); }
+
+  /* Start overlay */
+  .start-overlay {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    background: rgba(10,10,15,0.88); backdrop-filter: blur(4px);
+    transition: opacity 0.4s;
+  }
+  .start-overlay.hidden { opacity: 0; pointer-events: none; }
+
+  .start-icon { font-size: 3.5rem; animation: float 3s ease-in-out infinite; }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+
+  .start-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.5rem; letter-spacing: 4px;
+  }
+  .start-desc {
+    font-size: 0.7rem; color: var(--dim);
+    letter-spacing: 1px; text-align: center; line-height: 1.9;
+    padding: 0 20px;
+  }
+  .btn-start {
+    background: var(--accent); color: var(--bg);
+    border: none; padding: 14px 44px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.15rem; letter-spacing: 3px;
+    cursor: pointer; border-radius: 8px;
+    box-shadow: 0 0 24px rgba(0,255,136,0.35);
+    transition: transform 0.15s;
+  }
+  .btn-start:active { transform: scale(0.96); }
+
+  /* ── STATS ROW ── */
+  .stats-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
   }
 
-  /* Side panel */
-  .side-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .metric-card {
+  .card {
     background: var(--panel);
     border: 1px solid var(--muted);
-    border-radius: 12px;
-    padding: 20px;
-    position: relative;
-    overflow: hidden;
+    border-radius: 12px; padding: 14px 16px;
+    position: relative; overflow: hidden;
   }
-
-  .metric-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: var(--accent);
-    opacity: 0.5;
+  .card::after {
+    content: ''; position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: var(--accent); opacity: 0.4;
   }
-
-  .metric-label {
-    font-size: 0.65rem;
-    letter-spacing: 3px;
-    color: var(--dim);
-    text-transform: uppercase;
-    margin-bottom: 8px;
+  .card-label {
+    font-size: 0.58rem; letter-spacing: 3px;
+    color: var(--dim); margin-bottom: 6px;
   }
-
-  .metric-value {
+  .card-value {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 4rem;
-    line-height: 1;
+    font-size: 3.2rem; line-height: 1;
     color: var(--accent);
-    text-shadow: 0 0 30px rgba(0,255,136,0.4);
-    transition: color 0.3s;
+    text-shadow: 0 0 24px rgba(0,255,136,0.35);
   }
-
-  .metric-value.flash {
-    animation: countFlash 0.4s ease;
-  }
-
+  .card-value.flash { animation: countFlash 0.35s ease; }
   @keyframes countFlash {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.2); color: #fff; }
-    100% { transform: scale(1); }
+    0%{transform:scale(1)} 45%{transform:scale(1.2);color:#fff} 100%{transform:scale(1)}
   }
+  .card-sub { font-size: 0.6rem; color: var(--dim); margin-top: 4px; }
 
-  .metric-sub {
-    font-size: 0.7rem;
-    color: var(--dim);
-    margin-top: 4px;
-  }
-
-  /* Phase indicator */
+  /* ── PHASE CARD ── */
   .phase-card {
     background: var(--panel);
     border: 1px solid var(--muted);
-    border-radius: 12px;
-    padding: 16px 20px;
+    border-radius: 12px; padding: 14px 16px;
   }
-
-  .phase-label {
-    font-size: 0.65rem;
-    letter-spacing: 3px;
-    color: var(--dim);
-    margin-bottom: 12px;
-  }
-
-  .phase-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
+  .phase-label { font-size: 0.58rem; letter-spacing: 3px; color: var(--dim); margin-bottom: 10px; }
+  .phase-steps { display: flex; justify-content: space-between; }
   .phase-step {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.75rem;
-    color: var(--dim);
-    transition: color 0.3s;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-size: 0.52rem; letter-spacing: 1px; color: var(--muted);
+    transition: color 0.3s; flex: 1;
   }
-
   .phase-step.active { color: var(--accent); }
-  .phase-step.done { color: var(--dim); opacity: 0.5; }
-
   .phase-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    border: 1px solid currentColor;
-    flex-shrink: 0;
-    transition: background 0.3s;
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1.5px solid currentColor;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .phase-step.active .phase-dot {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  /* connecting line */
+  .phase-line {
+    flex: 1; height: 1px;
+    background: var(--muted); margin-top: -17px; margin-bottom: auto;
+    align-self: flex-start; margin-left: -4px; margin-right: -4px;
+    position: relative; top: 5px;
   }
 
-  .phase-step.active .phase-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-
-  /* Angle arc visualization */
+  /* ── ARC GAUGES ── */
   .arc-card {
     background: var(--panel);
     border: 1px solid var(--muted);
-    border-radius: 12px;
-    padding: 16px 20px;
+    border-radius: 12px; padding: 14px 16px;
   }
+  .arc-label { font-size: 0.58rem; letter-spacing: 3px; color: var(--dim); margin-bottom: 10px; }
+  .arc-row { display: flex; justify-content: space-around; }
+  .arc-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .arc-name { font-size: 0.58rem; letter-spacing: 2px; color: var(--dim); }
+  .arc-deg { font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; }
 
-  .arc-label { font-size: 0.65rem; letter-spacing: 3px; color: var(--dim); margin-bottom: 12px; }
-
-  .arc-vis {
-    display: flex;
-    gap: 12px;
-    justify-content: space-around;
-  }
-
-  .arc-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .arc-item canvas { display: block; }
-
-  .arc-name {
-    font-size: 0.6rem;
-    letter-spacing: 2px;
-    color: var(--dim);
-    text-transform: uppercase;
-  }
-
-  .arc-deg {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 1.2rem;
-    color: var(--text);
-    text-align: center;
-  }
-
-  /* History dots */
+  /* ── HISTORY ── */
   .history-card {
     background: var(--panel);
     border: 1px solid var(--muted);
-    border-radius: 12px;
-    padding: 16px 20px;
-    flex: 1;
+    border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 6px;
   }
-
-  .history-label { font-size: 0.65rem; letter-spacing: 3px; color: var(--dim); margin-bottom: 12px; }
-
-  .history-dots {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
-
+  .history-label { font-size: 0.58rem; letter-spacing: 3px; color: var(--dim); margin-bottom: 10px; }
+  .history-dots { display: flex; flex-wrap: wrap; gap: 5px; }
   .history-dot {
-    width: 12px; height: 12px;
-    border-radius: 2px;
+    width: 13px; height: 13px; border-radius: 3px;
     background: var(--muted);
-    transition: background 0.3s;
   }
-
-  .history-dot.good-rep { background: var(--accent); }
+  .history-dot.good-rep { background: var(--accent); box-shadow: 0 0 5px rgba(0,255,136,0.4); }
   .history-dot.warn-rep { background: #ffaa00; }
 
-  /* Loading */
+  /* ── LOADING ── */
   #loadingMsg {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
     background: var(--bg);
-    z-index: 100;
-    flex-direction: column;
-    gap: 16px;
-    font-size: 0.8rem;
-    letter-spacing: 2px;
-    color: var(--dim);
+    font-size: 0.75rem; letter-spacing: 2px; color: var(--dim);
   }
-
-  .loader-bar {
-    width: 200px; height: 2px;
-    background: var(--muted);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
+  .loader-bar { width: 180px; height: 2px; background: var(--muted); border-radius: 2px; overflow: hidden; }
   .loader-fill {
-    height: 100%;
-    background: var(--accent);
-    animation: load 2s ease-in-out forwards;
+    height: 100%; background: var(--accent);
     box-shadow: 0 0 8px var(--accent);
+    animation: load 2.2s ease-in-out forwards;
   }
-
-  @keyframes load {
-    0% { width: 0%; } 70% { width: 85%; } 100% { width: 100%; }
-  }
+  @keyframes load { 0%{width:0%} 70%{width:80%} 100%{width:100%} }
 </style>
 </head>
 <body>
 
+<!-- Loading -->
 <div id="loadingMsg">
-  <div style="font-family:'Bebas Neue',sans-serif;font-size:1.8rem;color:var(--accent);letter-spacing:6px;">AI FITNESS COACH</div>
-  <div>LOADING POSE DETECTION MODEL...</div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;color:var(--accent);letter-spacing:6px;">AI FITNESS COACH</div>
+  <div>LOADING MODEL...</div>
   <div class="loader-bar"><div class="loader-fill"></div></div>
 </div>
 
+<!-- Header -->
 <header>
   <div class="logo">AI <span>FITNESS</span> COACH</div>
   <div class="status-badge">
@@ -456,134 +302,137 @@
   </div>
 </header>
 
+<!-- Scrollable body -->
 <main>
-  <div class="camera-section">
-    <div class="canvas-wrapper">
+  <div class="inner">
+
+    <!-- Camera -->
+    <div class="camera-wrap">
       <video id="videoEl" playsinline muted autoplay></video>
       <canvas id="poseCanvas"></canvas>
 
-      <!-- Angle chips -->
       <div class="angle-display">
         <div class="angle-chip" id="leftAngleChip">L: --°</div>
         <div class="angle-chip" id="rightAngleChip">R: --°</div>
       </div>
 
-      <!-- Feedback banner -->
       <div class="feedback-banner" id="feedbackBanner">もっと深く！</div>
 
-      <!-- Start overlay -->
       <div class="start-overlay" id="startOverlay">
         <div class="start-icon">🏋️</div>
         <div class="start-title">SQUAT ANALYZER</div>
         <div class="start-desc">
-          カメラの前に全身が映るように立ってください<br>
-          横向きがより正確に計測できます
+          全身が映るように少し離れて立ってください<br>
+          横向きに置くとより精度が上がります
         </div>
         <button class="btn-start" id="btnStart">カメラを起動</button>
       </div>
     </div>
-  </div>
 
-  <div class="side-panel">
-    <!-- Rep counter -->
-    <div class="metric-card">
-      <div class="metric-label">REP COUNT</div>
-      <div class="metric-value" id="repCount">0</div>
-      <div class="metric-sub" id="repQuality">準備完了</div>
+    <!-- Rep count + Phase -->
+    <div class="stats-row">
+      <div class="card">
+        <div class="card-label">REP COUNT</div>
+        <div class="card-value" id="repCount">0</div>
+        <div class="card-sub" id="repQuality">待機中</div>
+      </div>
+      <div class="card">
+        <div class="card-label">BEST DEPTH</div>
+        <div class="card-value" id="bestDepth">--</div>
+        <div class="card-sub">degrees</div>
+      </div>
     </div>
 
     <!-- Phase -->
     <div class="phase-card">
       <div class="phase-label">SQUAT PHASE</div>
       <div class="phase-steps">
-        <div class="phase-step" id="phaseStand">
-          <div class="phase-dot"></div><span>STANDING</span>
+        <div class="phase-step active" id="phaseStand">
+          <div class="phase-dot"></div>
+          <span>STAND</span>
         </div>
+        <div class="phase-line"></div>
         <div class="phase-step" id="phaseDown">
-          <div class="phase-dot"></div><span>DESCENDING</span>
+          <div class="phase-dot"></div>
+          <span>DOWN</span>
         </div>
+        <div class="phase-line"></div>
         <div class="phase-step" id="phaseBottom">
-          <div class="phase-dot"></div><span>BOTTOM POSITION</span>
+          <div class="phase-dot"></div>
+          <span>BOTTOM</span>
         </div>
+        <div class="phase-line"></div>
         <div class="phase-step" id="phaseUp">
-          <div class="phase-dot"></div><span>ASCENDING</span>
+          <div class="phase-dot"></div>
+          <span>UP</span>
         </div>
       </div>
     </div>
 
-    <!-- Knee angle arcs -->
+    <!-- Knee angles -->
     <div class="arc-card">
       <div class="arc-label">KNEE ANGLE</div>
-      <div class="arc-vis">
+      <div class="arc-row">
         <div class="arc-item">
-          <canvas id="arcLeft" width="80" height="50"></canvas>
+          <canvas id="arcLeft" width="110" height="65"></canvas>
           <div class="arc-name">LEFT</div>
-          <div class="arc-deg" id="arcLeftDeg">--°</div>
+          <div class="arc-deg" id="arcLeftDeg" style="color:var(--dim)">--°</div>
         </div>
         <div class="arc-item">
-          <canvas id="arcRight" width="80" height="50"></canvas>
+          <canvas id="arcRight" width="110" height="65"></canvas>
           <div class="arc-name">RIGHT</div>
-          <div class="arc-deg" id="arcRightDeg">--°</div>
+          <div class="arc-deg" id="arcRightDeg" style="color:var(--dim)">--°</div>
         </div>
       </div>
     </div>
 
-    <!-- Rep history -->
+    <!-- History -->
     <div class="history-card">
       <div class="history-label">REP HISTORY</div>
       <div class="history-dots" id="historyDots">
-        <!-- filled dynamically -->
+        <div style="font-size:0.65rem;color:var(--muted)">スクワット待ち...</div>
       </div>
     </div>
+
   </div>
 </main>
 
 <script type="module">
-  // ─── MediaPipe PoseLandmarker ───────────────────────────────────────
   import { PoseLandmarker, FilesetResolver, DrawingUtils }
     from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/vision_bundle.mjs";
 
+  // ── State ──
   let poseLandmarker, webcamRunning = false, lastVideoTime = -1;
+  let repCount = 0, phase = 'stand', bottomAngle = 180;
+  let feedbackTimer = null, speakCooldown = false;
+  const SQUAT_TH = 105, DEEP_TH = 85, STAND_TH = 160;
+
   const videoEl = document.getElementById('videoEl');
   const canvas  = document.getElementById('poseCanvas');
   const ctx     = canvas.getContext('2d');
 
-  // ─── State ─────────────────────────────────────────────────────────
-  let repCount      = 0;
-  let phase         = 'stand';   // stand | down | bottom | up
-  let lastAngle     = 180;
-  let bottomAngle   = 180;
-  let feedbackTimer = null;
-  let speakCooldown = false;
-  let repHistory    = [];
-
-  const SQUAT_THRESHOLD  = 105;   // ここより小さい → valid squat bottom
-  const DEEP_THRESHOLD   = 85;    // ここより小さい → perfect depth
-  const STAND_THRESHOLD  = 160;   // ここより大きい → standing
-
-  // ─── Init model ────────────────────────────────────────────────────
+  // ── Init ──
   async function init() {
     const vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm"
     );
     poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath:
-          "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
         delegate: "GPU"
       },
       runningMode: "VIDEO",
       numPoses: 1
     });
     document.getElementById('loadingMsg').style.display = 'none';
-    console.log("Model loaded");
   }
 
-  // ─── Camera start ──────────────────────────────────────────────────
+  // ── Camera ──
   document.getElementById('btnStart').addEventListener('click', async () => {
     try {
+      // iPhone: environment = 背面カメラ（後ろから自分を撮る場合）、user = 前面
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } }
       });
       videoEl.srcObject = stream;
       videoEl.addEventListener('loadeddata', () => {
@@ -591,251 +440,165 @@
         document.getElementById('startOverlay').classList.add('hidden');
         document.getElementById('statusDot').classList.add('active');
         document.getElementById('statusText').textContent = 'DETECTING';
-        predictLoop();
+        loop();
       });
-    } catch (e) {
-      alert('カメラへのアクセスが必要です: ' + e.message);
+    } catch(e) {
+      alert('カメラ許可が必要です。\nSafari設定 → カメラ → 許可\n\n' + e.message);
     }
   });
 
-  // ─── Prediction loop ───────────────────────────────────────────────
-  function predictLoop() {
+  // ── Loop ──
+  function loop() {
     if (!webcamRunning) return;
     if (videoEl.currentTime !== lastVideoTime) {
       lastVideoTime = videoEl.currentTime;
-
-      canvas.width  = videoEl.videoWidth  || 640;
-      canvas.height = videoEl.videoHeight || 480;
-
-      const results = poseLandmarker.detectForVideo(videoEl, performance.now());
-      processResults(results);
+      canvas.width  = videoEl.videoWidth  || 720;
+      canvas.height = videoEl.videoHeight || 1280;
+      draw(poseLandmarker.detectForVideo(videoEl, performance.now()));
     }
-    requestAnimationFrame(predictLoop);
+    requestAnimationFrame(loop);
   }
 
-  // ─── Drawing + logic ───────────────────────────────────────────────
-  function processResults(results) {
+  // ── Draw ──
+  function draw(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Mirror-draw video
-    ctx.save();
-    ctx.scale(-1, 1);
+    ctx.save(); ctx.scale(-1,1);
     ctx.drawImage(videoEl, -canvas.width, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    if (!results.landmarks || results.landmarks.length === 0) return;
-
+    if (!results.landmarks?.length) return;
     const lm = results.landmarks[0];
-    const dU = new DrawingUtils(ctx);
+    const du = new DrawingUtils(ctx);
 
-    // Draw skeleton (mirrored)
-    ctx.save();
-    ctx.scale(-1, 1);
-    ctx.translate(-canvas.width, 0);
-
-    dU.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, {
-      color: 'rgba(0,255,136,0.35)', lineWidth: 2
-    });
-    dU.drawLandmarks(lm, {
-      color: 'rgba(0,255,136,0.8)', lineWidth: 1, radius: 4
-    });
+    ctx.save(); ctx.scale(-1,1); ctx.translate(-canvas.width,0);
+    du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color:'rgba(0,255,136,0.3)', lineWidth:2 });
+    du.drawLandmarks(lm, { color:'rgba(0,255,136,0.75)', lineWidth:1, radius:4 });
     ctx.restore();
 
-    // Knee angles (landmarks 25=left hip, 26=left knee, 28=left ankle | 24=right hip, 25=right knee, 27=right ankle)
-    // MediaPipe: 23=left_hip 25=left_knee 27=left_ankle | 24=right_hip 26=right_knee 28=right_ankle
-    const leftAngle  = getAngle(lm[23], lm[25], lm[27]);
-    const rightAngle = getAngle(lm[24], lm[26], lm[28]);
-    const avgAngle   = (leftAngle + rightAngle) / 2;
+    const lA = angle(lm[23], lm[25], lm[27]);
+    const rA = angle(lm[24], lm[26], lm[28]);
+    const avg = (lA + rA) / 2;
 
-    updateAngleUI(leftAngle, rightAngle);
-    drawArc('arcLeft',  leftAngle);
-    drawArc('arcRight', rightAngle);
-
-    // Highlight knee joints
-    highlightKnee(lm[25], leftAngle, canvas.width);
-    highlightKnee(lm[26], rightAngle, canvas.width);
-
-    // Squat FSM
-    squatFSM(avgAngle);
+    updateAngleUI(lA, rA);
+    drawArc('arcLeft',  lA);
+    drawArc('arcRight', rA);
+    highlightKnee(lm[25], lA);
+    highlightKnee(lm[26], rA);
+    fsm(avg);
   }
 
-  // ─── Angle calculation ─────────────────────────────────────────────
-  function getAngle(a, b, c) {
-    if (!a || !b || !c) return 180;
-    const radians = Math.atan2(c.y - b.y, c.x - b.x)
-                  - Math.atan2(a.y - b.y, a.x - b.x);
-    let angle = Math.abs(radians * 180 / Math.PI);
-    if (angle > 180) angle = 360 - angle;
-    return Math.round(angle);
+  // ── Angle calc ──
+  function angle(a, b, c) {
+    if (!a||!b||!c) return 180;
+    let r = Math.atan2(c.y-b.y, c.x-b.x) - Math.atan2(a.y-b.y, a.x-b.x);
+    let d = Math.abs(r * 180 / Math.PI);
+    return Math.round(d > 180 ? 360-d : d);
   }
 
-  // ─── Squat FSM ─────────────────────────────────────────────────────
-  function squatFSM(angle) {
+  // ── FSM ──
+  function fsm(a) {
     const prev = phase;
-
-    if (phase === 'stand' && angle < STAND_THRESHOLD - 20) {
-      phase = 'down';
-      bottomAngle = angle;
-    } else if (phase === 'down') {
-      bottomAngle = Math.min(bottomAngle, angle);
-      if (angle < SQUAT_THRESHOLD) phase = 'bottom';
-    } else if (phase === 'bottom') {
-      bottomAngle = Math.min(bottomAngle, angle);
-      if (angle > SQUAT_THRESHOLD + 15) phase = 'up';
-    } else if (phase === 'up') {
-      if (angle > STAND_THRESHOLD) {
-        // Rep completed
-        const isDeep = bottomAngle <= DEEP_THRESHOLD;
-        const isGood = bottomAngle <= SQUAT_THRESHOLD;
-
-        repCount++;
-        repHistory.push(isDeep ? 'deep' : isGood ? 'good' : 'shallow');
-
-        updateRepUI(isDeep, isGood);
-        giveFeedback(isDeep, isGood);
-        phase = 'stand';
-        bottomAngle = 180;
-      }
+    if (phase==='stand' && a < STAND_TH-20) { phase='down'; bottomAngle=a; }
+    else if (phase==='down') {
+      bottomAngle = Math.min(bottomAngle, a);
+      if (a < SQUAT_TH) phase='bottom';
+    } else if (phase==='bottom') {
+      bottomAngle = Math.min(bottomAngle, a);
+      if (a > SQUAT_TH+15) phase='up';
+    } else if (phase==='up' && a > STAND_TH) {
+      const isDeep = bottomAngle <= DEEP_TH;
+      const isGood = bottomAngle <= SQUAT_TH;
+      repCount++;
+      updateRepUI(isDeep, isGood);
+      feedback(isDeep, isGood);
+      phase='stand'; bottomAngle=180;
     }
-
-    if (phase !== prev) updatePhaseUI();
+    if (phase!==prev) updatePhaseUI();
   }
 
-  // ─── UI updates ────────────────────────────────────────────────────
+  // ── UI ──
   function updateAngleUI(l, r) {
-    const lChip = document.getElementById('leftAngleChip');
-    const rChip = document.getElementById('rightAngleChip');
-    lChip.textContent = `L: ${l}°`;
-    rChip.textContent = `R: ${r}°`;
-    const avg = (l + r) / 2;
-    const good = avg < SQUAT_THRESHOLD;
-    lChip.className = 'angle-chip' + (avg < STAND_THRESHOLD ? (good ? ' good' : ' warn') : '');
-    rChip.className = 'angle-chip' + (avg < STAND_THRESHOLD ? (good ? ' good' : ' warn') : '');
-    document.getElementById('arcLeftDeg').textContent  = l + '°';
-    document.getElementById('arcRightDeg').textContent = r + '°';
+    const avg = (l+r)/2;
+    const cls = avg<STAND_TH ? (avg<SQUAT_TH?' good':' warn') : '';
+    document.getElementById('leftAngleChip').textContent  = `L: ${l}°`;
+    document.getElementById('rightAngleChip').textContent = `R: ${r}°`;
+    document.getElementById('leftAngleChip').className  = 'angle-chip'+cls;
+    document.getElementById('rightAngleChip').className = 'angle-chip'+cls;
+    const color = avg<=SQUAT_TH?'#00ff88':avg<STAND_TH?'#ffaa00':'#6a6a8a';
+    document.getElementById('arcLeftDeg').textContent  = l+'°';
+    document.getElementById('arcRightDeg').textContent = r+'°';
+    document.getElementById('arcLeftDeg').style.color  = color;
+    document.getElementById('arcRightDeg').style.color = color;
   }
 
   function updateRepUI(isDeep, isGood) {
     const el = document.getElementById('repCount');
     el.textContent = repCount;
-    el.classList.remove('flash');
-    void el.offsetWidth;
-    el.classList.add('flash');
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    document.getElementById('repQuality').textContent =
+      isDeep ? '✓ PERFECT' : isGood ? '✓ GOOD' : '⚠ DEEPER';
+    document.getElementById('bestDepth').textContent = bottomAngle + '°';
 
-    const qual = document.getElementById('repQuality');
-    if (isDeep)      qual.textContent = '✓ PERFECT DEPTH';
-    else if (isGood) qual.textContent = '✓ GOOD SQUAT';
-    else             qual.textContent = '⚠ DEEPER NEEDED';
-
-    // History dots
-    const container = document.getElementById('historyDots');
-    const dot = document.createElement('div');
-    dot.className = 'history-dot ' + (isDeep ? 'good-rep' : isGood ? 'good-rep' : 'warn-rep');
-    container.appendChild(dot);
-    if (container.children.length > 40) container.removeChild(container.firstChild);
+    const dots = document.getElementById('historyDots');
+    if (dots.querySelector('div[style]')) dots.innerHTML='';
+    const d = document.createElement('div');
+    d.className = 'history-dot ' + (isGood ? 'good-rep' : 'warn-rep');
+    dots.appendChild(d);
+    if (dots.children.length > 40) dots.removeChild(dots.firstChild);
   }
 
   function updatePhaseUI() {
-    const phases = { stand:'phaseStand', down:'phaseDown', bottom:'phaseBottom', up:'phaseUp' };
-    Object.entries(phases).forEach(([k, id]) => {
-      document.getElementById(id).className = 'phase-step' + (k === phase ? ' active' : '');
+    const map = { stand:'phaseStand', down:'phaseDown', bottom:'phaseBottom', up:'phaseUp' };
+    Object.entries(map).forEach(([k,id]) => {
+      document.getElementById(id).className = 'phase-step'+(k===phase?' active':'');
     });
   }
 
-  function giveFeedback(isDeep, isGood) {
-    const banner = document.getElementById('feedbackBanner');
-
-    if (!isGood) {
-      // Need deeper
-      banner.textContent = 'もっと深く！';
-      banner.className = 'feedback-banner show';
-      speakJapanese('もっと深く！');
-    } else if (isDeep) {
-      banner.textContent = '完璧です！';
-      banner.className = 'feedback-banner good-fb show';
-      speakJapanese('完璧です！');
-    } else {
-      banner.textContent = 'グッド！';
-      banner.className = 'feedback-banner good-fb show';
-      speakJapanese('グッド！');
-    }
-
+  function feedback(isDeep, isGood) {
+    const b = document.getElementById('feedbackBanner');
+    const msg = !isGood ? 'もっと深く！' : isDeep ? '完璧です！' : 'グッド！';
+    b.textContent = msg;
+    b.className = 'feedback-banner show' + (isGood?' good-fb':'');
+    speak(msg);
     clearTimeout(feedbackTimer);
-    feedbackTimer = setTimeout(() => {
-      banner.className = 'feedback-banner';
-    }, 2500);
+    feedbackTimer = setTimeout(()=>{ b.className='feedback-banner'; }, 2500);
   }
 
-  function speakJapanese(text) {
+  function speak(text) {
     if (speakCooldown || !window.speechSynthesis) return;
     speakCooldown = true;
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = 'ja-JP';
-    utt.rate = 1.0;
-    utt.pitch = 1.1;
-    utt.volume = 1.0;
-    window.speechSynthesis.speak(utt);
-    utt.onend = () => { speakCooldown = false; };
-    setTimeout(() => { speakCooldown = false; }, 2000);
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang='ja-JP'; u.rate=1.0; u.pitch=1.1; u.volume=1.0;
+    u.onend = ()=>{ speakCooldown=false; };
+    window.speechSynthesis.speak(u);
+    setTimeout(()=>{ speakCooldown=false; }, 2200);
   }
 
-  // ─── Arc drawing on mini canvases ──────────────────────────────────
-  function drawArc(canvasId, angle) {
-    const c = document.getElementById(canvasId);
+  function drawArc(id, a) {
+    const c = document.getElementById(id);
     const x = c.getContext('2d');
-    x.clearRect(0, 0, 80, 50);
-
-    const cx = 40, cy = 48, r = 36;
-    const startRad = Math.PI;
-    const fraction = Math.max(0, Math.min(180, 180 - angle)) / 180;
-    const endRad   = Math.PI + fraction * Math.PI;
-
-    // Track
-    x.beginPath();
-    x.arc(cx, cy, r, Math.PI, 2 * Math.PI);
-    x.strokeStyle = '#2a2a3a';
-    x.lineWidth = 6;
-    x.lineCap = 'round';
-    x.stroke();
-
-    // Fill
-    const good = angle <= SQUAT_THRESHOLD;
-    const color = good ? '#00ff88' : angle < STAND_THRESHOLD ? '#ffaa00' : '#3a3a5a';
-    x.beginPath();
-    x.arc(cx, cy, r, startRad, endRad);
-    x.strokeStyle = color;
-    x.lineWidth = 6;
-    x.lineCap = 'round';
-    x.stroke();
-    if (good) {
-      x.shadowBlur = 8;
-      x.shadowColor = color;
-      x.stroke();
-      x.shadowBlur = 0;
-    }
+    const W=110, H=65, cx=55, cy=62, r=48;
+    x.clearRect(0,0,W,H);
+    x.beginPath(); x.arc(cx,cy,r,Math.PI,2*Math.PI);
+    x.strokeStyle='#2a2a3a'; x.lineWidth=7; x.lineCap='round'; x.stroke();
+    const frac = Math.max(0, Math.min(180,180-a))/180;
+    const color = a<=SQUAT_TH?'#00ff88':a<STAND_TH?'#ffaa00':'#3a3a5a';
+    x.beginPath(); x.arc(cx,cy,r,Math.PI,Math.PI+frac*Math.PI);
+    x.strokeStyle=color; x.lineWidth=7; x.lineCap='round';
+    if(a<=SQUAT_TH){x.shadowBlur=10;x.shadowColor=color;}
+    x.stroke(); x.shadowBlur=0;
   }
 
-  // ─── Highlight knee joints ─────────────────────────────────────────
-  function highlightKnee(kp, angle, canvasW) {
+  function highlightKnee(kp, a) {
     if (!kp) return;
-    const good = angle <= SQUAT_THRESHOLD;
-    const x = (1 - kp.x) * canvasW;   // mirrored
-    const y = kp.y * canvas.height;
-
-    ctx.beginPath();
-    ctx.arc(x, y, 14, 0, 2 * Math.PI);
-    ctx.strokeStyle = good ? 'rgba(0,255,136,0.8)' : 'rgba(255,60,90,0.8)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    if (good) {
-      ctx.shadowBlur = 12;
-      ctx.shadowColor = '#00ff88';
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
+    const x = (1-kp.x)*canvas.width, y = kp.y*canvas.height;
+    ctx.beginPath(); ctx.arc(x,y,16,0,2*Math.PI);
+    ctx.strokeStyle = a<=SQUAT_TH?'rgba(0,255,136,0.8)':'rgba(255,60,90,0.8)';
+    ctx.lineWidth=2; ctx.stroke();
+    if(a<=SQUAT_TH){ ctx.shadowBlur=14; ctx.shadowColor='#00ff88'; ctx.stroke(); ctx.shadowBlur=0; }
   }
 
-  // ─── Boot ──────────────────────────────────────────────────────────
   init();
   updatePhaseUI();
 </script>
